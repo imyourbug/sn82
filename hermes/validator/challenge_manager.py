@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 from hermes.validator.benchmark import BenchMark
+
 if TYPE_CHECKING:
     from neurons.validator import Validator
 from agent.stats import Phase, TokenUsageMetrics
@@ -61,10 +62,10 @@ class ChallengeManager:
     V: "Validator"
 
     def __init__(
-        self, 
-        settings: Settings, 
-        save_project_dir: str | Path, 
-        uid: int, 
+        self,
+        settings: Settings,
+        save_project_dir: str | Path,
+        uid: int,
         dendrite: bt.Dendrite,
         organic_score_queue: list,
         ipc_synthetic_score: list,
@@ -82,11 +83,19 @@ class ChallengeManager:
         self.settings = settings
 
         # Configure synthetic challenge loop interval (default: 10 minutes)
-        self.challenge_interval = int(os.getenv("CHALLENGE_INTERVAL", 60 * 20))  # seconds
-        self.refresh_agents_interval = int(os.getenv("REFRESH_AGENTS_INTERVAL", 60 * 5))  # seconds
+        self.challenge_interval = int(
+            os.getenv("CHALLENGE_INTERVAL", 60 * 20)
+        )  # seconds
+        self.refresh_agents_interval = int(
+            os.getenv("REFRESH_AGENTS_INTERVAL", 60 * 5)
+        )  # seconds
 
-        self.forward_miner_timeout = int(os.getenv("FORWARD_MINER_TIMEOUT", 60 * 3))  # seconds
-        logger.info(f"[ChallengeManager] Synthetic challenge interval set to {self.challenge_interval} seconds")
+        self.forward_miner_timeout = int(
+            os.getenv("FORWARD_MINER_TIMEOUT", 60 * 3)
+        )  # seconds
+        logger.info(
+            f"[ChallengeManager] Synthetic challenge interval set to {self.challenge_interval} seconds"
+        )
 
         self.uid = uid
         self.round_id = 1
@@ -94,17 +103,15 @@ class ChallengeManager:
         self.token_usage_metrics = TokenUsageMetrics(datas=synthetic_token_usage)
         self.benchmark = BenchMark(self.settings.wallet, ipc_meta_config)
 
-        synthetic_model_name = synthetic_model_name or os.getenv("LLM_MODEL", "google/gemini-3-flash-preview")
-        self.llm_synthetic = ChatOpenAI(
-            model=synthetic_model_name,
-            temperature=1
+        synthetic_model_name = synthetic_model_name or os.getenv(
+            "LLM_MODEL", "google/gemini-3-flash-preview"
         )
+        self.llm_synthetic = ChatOpenAI(model=synthetic_model_name, temperature=1)
 
-        score_model_name = score_model_name or os.getenv("SCORE_LLM_MODEL", "google/gemini-3-flash-preview")
-        self.llm_score = ChatOpenAI(
-            model=score_model_name,
-            temperature=0
+        score_model_name = score_model_name or os.getenv(
+            "SCORE_LLM_MODEL", "google/gemini-3-flash-preview"
         )
+        self.llm_score = ChatOpenAI(model=score_model_name, temperature=0)
 
         self.agent_manager = AgentManager(
             save_project_dir=Path(save_project_dir),
@@ -115,7 +122,7 @@ class ChallengeManager:
         self.scorer_manager = ScorerManager(
             llm_score=self.llm_score,
             score_state_path=score_state_path,
-            ipc_meta_config=ipc_meta_config
+            ipc_meta_config=ipc_meta_config,
         )
 
         self.workload_manager = WorkloadManager(
@@ -138,20 +145,34 @@ class ChallengeManager:
         self._last_set_weight_time = 0
         self._last_epoch_submitted: Optional[int] = None
         self.block_time_seconds = float(os.getenv("CHAIN_BLOCK_TIME_SECONDS", 12))
-        self.epoch_submission_buffer_seconds = int(os.getenv("EPOCH_SUBMISSION_BUFFER_SECONDS", 60))
+        self.epoch_submission_buffer_seconds = int(
+            os.getenv("EPOCH_SUBMISSION_BUFFER_SECONDS", 60)
+        )
         if self.block_time_seconds <= 0:
-            logger.warning("[ChallengeManager] Invalid CHAIN_BLOCK_TIME_SECONDS, defaulting to 12 seconds")
+            logger.warning(
+                "[ChallengeManager] Invalid CHAIN_BLOCK_TIME_SECONDS, defaulting to 12 seconds"
+            )
             self.block_time_seconds = 12.0
-        buffer_blocks = int(self.epoch_submission_buffer_seconds / self.block_time_seconds)
+        buffer_blocks = int(
+            self.epoch_submission_buffer_seconds / self.block_time_seconds
+        )
         self.epoch_submission_buffer_blocks = max(1, buffer_blocks)
         # self.scores = torch.zeros_like(torch.tensor(self.settings.metagraph.S), dtype=torch.float32)
         # self.device = 'cpu'
-        self.set_weight_interval = int(os.getenv("SET_WEIGHT_INTERVAL", 60 * 30))  # seconds
-        
-        logger.info(f"[ChallengeManager] Set weight interval to {self.set_weight_interval} seconds")
+        self.set_weight_interval = int(
+            os.getenv("SET_WEIGHT_INTERVAL", 60 * 30)
+        )  # seconds
 
-        logger.info(f"[ChallengeManager] Using LLM model: {synthetic_model_name} for synthetic challenge")
-        logger.info(f"[ChallengeManager] Using LLM model: {score_model_name} for scoring")
+        logger.info(
+            f"[ChallengeManager] Set weight interval to {self.set_weight_interval} seconds"
+        )
+
+        logger.info(
+            f"[ChallengeManager] Using LLM model: {synthetic_model_name} for synthetic challenge"
+        )
+        logger.info(
+            f"[ChallengeManager] Using LLM model: {score_model_name} for scoring"
+        )
         logger.info(f"[ChallengeManager] Using KEY: {utils.format_openai_key()}")
 
     async def start(self):
@@ -163,15 +184,15 @@ class ChallengeManager:
 
             self.task = [
                 asyncio.create_task(self.workload_manager.compute_organic_task()),
-                asyncio.create_task(self.set_weight()),
+                # asyncio.create_task(self.set_weight()),
                 asyncio.create_task(self.challenge_loop()),
-                asyncio.create_task(self.refresh_agents()),
+                # asyncio.create_task(self.refresh_agents()),
             ]
             await asyncio.gather(*self.task)
         except KeyboardInterrupt:
             logger.info("[ChallengeManager] Starting process interrupted by user")
             # Cancel all running tasks
-            if hasattr(self, 'task'):
+            if hasattr(self, "task"):
                 for task in self.task:
                     if not task.done():
                         task.cancel()
@@ -180,13 +201,17 @@ class ChallengeManager:
             logger.info("[ChallengeManager] All tasks cancelled successfully")
             raise  # Re-raise to allow graceful shutdown at higher level
         except Exception as e:
-            logger.error(f"[ChallengeManager] Failed to start challenge manager: {e}\n{traceback.format_exc()}")
+            logger.error(
+                f"[ChallengeManager] Failed to start challenge manager: {e}\n{traceback.format_exc()}"
+            )
             raise
 
     async def challenge_loop(self):
         try:
             block_cache: dict[str, int] = {}
-            miners_counter: dict[int, tuple[int, int]] = {}  # uid -> [success_count, total_count]
+            miners_counter: dict[
+                int, tuple[int, int]
+            ] = {}  # uid -> [success_count, total_count]
             challenge_interval = self.challenge_interval
 
             while not self.event_stop.is_set():
@@ -194,7 +219,9 @@ class ChallengeManager:
 
                 projects = self.agent_manager.get_projects()
                 if not projects:
-                    logger.warning("[ChallengeManager] No projects found, skipping this round.")
+                    logger.warning(
+                        "[ChallengeManager] No projects found, skipping this round."
+                    )
                     challenge_interval = 30
                     continue
 
@@ -211,22 +238,32 @@ class ChallengeManager:
                         uids.append(u)
                         hotkeys.append(miner_hotkeys[idx])
 
-                skip_query_miner = os.getenv("SKIP_QUERY_MINER", "false").lower() == "true"
+                skip_query_miner = (
+                    os.getenv("SKIP_QUERY_MINER", "false").lower() == "true"
+                )
 
                 if not skip_query_miner and not uids:
-                    logger.warning("[ChallengeManager] No available miners for challenge, skipping this round.")
+                    logger.warning(
+                        "[ChallengeManager] No available miners for challenge, skipping this round."
+                    )
                     challenge_interval = 30
                     continue
 
                 project_score_matrix = []
-                organic_success_score_threshold = self.ipc_meta_config.get("organic_success_score_threshold", 5)
+                organic_success_score_threshold = self.ipc_meta_config.get(
+                    "organic_success_score_threshold", 5
+                )
 
                 for cid_hash, project_config in projects.items():
-                    allowed_cid_hashs_str = os.getenv("ALLOWED_PROJECT_CID_HASHS", "").strip()
+                    allowed_cid_hashs_str = os.getenv(
+                        "ALLOWED_PROJECT_CID_HASHS", ""
+                    ).strip()
                     if allowed_cid_hashs_str:
                         allowed_cid_hashs = allowed_cid_hashs_str.split(",")
                         if cid_hash not in allowed_cid_hashs:
-                            logger.info(f"[ChallengeManager] - {cid_hash} Skipping project not in allowed list")
+                            logger.info(
+                                f"[ChallengeManager] - {cid_hash} Skipping project not in allowed list"
+                            )
                             continue
 
                     # Retry loop: attempt to generate a valid challenge for this project
@@ -239,35 +276,56 @@ class ChallengeManager:
 
                         # generate challenge
                         question, error = await question_generator.generate_question(
-                            cid_hash, 
-                            project_config.schema_content, 
+                            cid_hash,
+                            project_config.schema_content,
                             self.llm_synthetic,
                             self.token_usage_metrics,
-                            round_id=self.round_id
+                            round_id=self.round_id,
                         )
                         if not question:
-                            logger.warning(f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})")
-                            error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}")
+                            logger.warning(
+                                f"[ChallengeManager] - {cid_hash} Failed to generate question (attempt {attempt + 1}/{max_retries})"
+                            )
+                            error_msgs.append(
+                                f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) {error}"
+                            )
                             continue
 
                         # get latest block
-                        latest_block = await utils.get_latest_block(project_config.endpoint, project_config.node_type)
-                        if latest_block is None and block_cache.get(cid_hash, None) is None:
-                            logger.warning(f"[ChallengeManager] - {cid_hash} Failed to get latest block (attempt {attempt + 1}/{max_retries})")
-                            error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) Failed to get latest block.")
+                        latest_block = await utils.get_latest_block(
+                            project_config.endpoint, project_config.node_type
+                        )
+                        if (
+                            latest_block is None
+                            and block_cache.get(cid_hash, None) is None
+                        ):
+                            logger.warning(
+                                f"[ChallengeManager] - {cid_hash} Failed to get latest block (attempt {attempt + 1}/{max_retries})"
+                            )
+                            error_msgs.append(
+                                f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) Failed to get latest block."
+                            )
                             continue
-                        
+
                         if latest_block is not None:
                             block_cache[cid_hash] = latest_block - 1000
-                        
-                        logger.info(f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}")
 
-                        success, ground_truth, ground_cost, metrics_data, model_name = await self.generate_ground_truth(
+                        logger.info(
+                            f"[ChallengeManager] - {cid_hash} Selected block height: {block_cache[cid_hash]}"
+                        )
+
+                        (
+                            success,
+                            ground_truth,
+                            ground_cost,
+                            metrics_data,
+                            model_name,
+                        ) = await self.generate_ground_truth(
                             cid_hash=cid_hash,
                             question=question,
                             token_usage_metrics=self.token_usage_metrics,
                             round_id=self.round_id,
-                            block_height=block_cache[cid_hash]
+                            block_height=block_cache[cid_hash],
                         )
 
                         is_valid = success and utils.is_ground_truth_valid(ground_truth)
@@ -282,12 +340,16 @@ class ChallengeManager:
                             ground_truth=ground_truth,
                             ground_cost=ground_cost,
                             # metrics_data=utils.pick(metrics_data, ["phase", "input_tokens", "input_cache_read_tokens", "output_tokens", "timestamp", "round_id"])
-                            metrics_data=metrics_data
+                            metrics_data=metrics_data,
                         )
 
                         if not is_valid:
-                            logger.warning(f"[ChallengeManager] - {challenge_id} Invalid ground truth (attempt {attempt + 1}/{max_retries}): {ground_truth}")
-                            error_msgs.append(f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) Invalid ground truth: {ground_truth}")
+                            logger.warning(
+                                f"[ChallengeManager] - {challenge_id} Invalid ground truth (attempt {attempt + 1}/{max_retries}): {ground_truth}"
+                            )
+                            error_msgs.append(
+                                f"(round: {self.round_id}, attempt: {attempt + 1}/{max_retries}, {cid_hash}) Invalid ground truth: {ground_truth}"
+                            )
                             continue
 
                         # Valid challenge generated, break retry loop
@@ -295,15 +357,17 @@ class ChallengeManager:
                         break
                     # Skip this project if all retries failed
                     if not challenge_generated:
-                        logger.error(f"[ChallengeManager] - {cid_hash} Failed to generate valid challenge after {max_retries} attempts, skipping project")
+                        logger.error(
+                            f"[ChallengeManager] - {cid_hash} Failed to generate valid challenge after {max_retries} attempts, skipping project"
+                        )
                         await self.benchmark.add_failure(
-                            uid= self.uid,
-                            round_id= self.round_id,
-                            address= self.settings.wallet.hotkey.ss58_address,
-                            version= self.settings.version,
-                            failure_type= FailureType.GENERATE_CHALLENGE.value,
-                            cid_hash= cid_hash,
-                            error_msgs= error_msgs
+                            uid=self.uid,
+                            round_id=self.round_id,
+                            address=self.settings.wallet.hotkey.ss58_address,
+                            version=self.settings.version,
+                            failure_type=FailureType.GENERATE_CHALLENGE.value,
+                            cid_hash=cid_hash,
+                            error_msgs=error_msgs,
                         )
                         continue
 
@@ -311,12 +375,16 @@ class ChallengeManager:
                         continue
 
                     # query all miner
-                    logger.info(f"[ChallengeManager] - {challenge_id} query miners: {uids}")
+                    logger.info(
+                        f"[ChallengeManager] - {challenge_id} query miners: {uids}"
+                    )
 
                     # Use semaphore to limit concurrent requests
-                    max_concurrent_requests = int(os.getenv("MAX_CONCURRENT_MINER_REQUESTS", 20))
+                    max_concurrent_requests = int(
+                        os.getenv("MAX_CONCURRENT_MINER_REQUESTS", 20)
+                    )
                     semaphore = asyncio.Semaphore(max_concurrent_requests)
-                    
+
                     async def query_with_semaphore(uid, hotkey):
                         async with semaphore:
                             return await self.query_miner(
@@ -325,25 +393,39 @@ class ChallengeManager:
                                 cid_hash=cid_hash,
                                 challenge_id=challenge_id,
                                 question=question,
-                                block_height=block_cache[cid_hash]
+                                block_height=block_cache[cid_hash],
                             )
-                    
+
                     responses = await asyncio.gather(
-                        *(query_with_semaphore(uid, hotkey) for uid, hotkey in zip(uids, hotkeys))
+                        *(
+                            query_with_semaphore(uid, hotkey)
+                            for uid, hotkey in zip(uids, hotkeys)
+                        )
                     )
 
-                    logger.info(f"[ChallengeManager] - {challenge_id} query miners done")
+                    logger.info(
+                        f"[ChallengeManager] - {challenge_id} query miners done"
+                    )
+
+                    print(f"RESPONSES FROM MINER {responses}")
 
                     # score result
-                    zip_scores, ground_truth_scores, elapse_weights, miners_elapse_time = await self.scorer_manager.compute_challenge_score(
+                    (
+                        zip_scores,
+                        ground_truth_scores,
+                        elapse_weights,
+                        miners_elapse_time,
+                    ) = await self.scorer_manager.compute_challenge_score(
                         ground_truth,
                         ground_cost,
                         responses,
                         challenge_id=challenge_id,
                         cid_hash=cid_hash,
                         token_usage_metrics=self.token_usage_metrics,
-                        min_latency_improvement_ratio=self.ipc_meta_config.get("min_latency_improvement_ratio", 0.2),
-                        round_id=self.round_id
+                        min_latency_improvement_ratio=self.ipc_meta_config.get(
+                            "min_latency_improvement_ratio", 0.2
+                        ),
+                        round_id=self.round_id,
                     )
                     project_score_matrix.append(zip_scores)
 
@@ -365,13 +447,13 @@ class ChallengeManager:
                         elapse_weights=elapse_weights,
                         zip_scores=zip_scores,
                         cid=cid_hash,
-                        max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 256))
+                        max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 256)),
                     )
 
                     await self.benchmark.upload(
                         uid=self.V.uid,
                         address=self.settings.wallet.hotkey.ss58_address,
-                        cid=cid_hash.split('_')[0],
+                        cid=cid_hash.split("_")[0],
                         challenge_type=ChallengeType.SYNTHETIC.value,
                         challenge_id=challenge_id,
                         question=question,
@@ -380,47 +462,90 @@ class ChallengeManager:
                         score_model_name=self.llm_score.model_name,
                         ground_truth=ground_truth[:500] if ground_truth else None,
                         ground_cost=ground_cost,
-                        ground_truth_tools=[json.loads(t) for t in metrics_data.get("tool_calls", [])],
+                        ground_truth_tools=[
+                            json.loads(t) for t in []
+                        ],
                         ground_input_tokens=metrics_data.get("input_tokens", 0),
-                        ground_input_cache_read_tokens=metrics_data.get("input_cache_read_tokens", 0),
+                        ground_input_cache_read_tokens=metrics_data.get(
+                            "input_cache_read_tokens", 0
+                        ),
                         ground_output_tokens=metrics_data.get("output_tokens", 0),
-                        
                         miners_answer=[
                             {
                                 "uid": uid,
                                 "address": hotkey,
-                                "minerModelName": resp.miner_model_name[:50] if resp.miner_model_name else "",
-                                "graphqlAgentModelName": resp.graphql_agent_model_name[:50] if resp.graphql_agent_model_name else "",
+                                "minerModelName": resp.miner_model_name[:50]
+                                if resp.miner_model_name
+                                else "",
+                                "graphqlAgentModelName": resp.graphql_agent_model_name[
+                                    :50
+                                ]
+                                if resp.graphql_agent_model_name
+                                else "",
                                 "elapsed": elapse_time,
                                 "truthScore": truth_score,
                                 "statusCode": resp.status_code,
                                 "error": resp.error,
                                 "answer": resp.response[:500] if resp.response else "",
-                                "inputTokens": resp.usage_info.get("input_tokens", 0) if resp.usage_info else 0,
-                                "inputCacheReadTokens": resp.usage_info.get("input_cache_read_tokens", 0) if resp.usage_info else 0,
-                                "outputTokens": resp.usage_info.get("output_tokens", 0) if resp.usage_info else 0,
-                                "toolCalls": [json.loads(t) for t in resp.usage_info.get("tool_calls", [])] if resp.usage_info else [],
-                                "graphqlAgentInnerToolCalls": [json.loads(t) for t in resp.graphql_agent_inner_tool_calls] if resp.graphql_agent_inner_tool_calls else [],
+                                "inputTokens": resp.usage_info.get("input_tokens", 0)
+                                if resp.usage_info
+                                else 0,
+                                "inputCacheReadTokens": resp.usage_info.get(
+                                    "input_cache_read_tokens", 0
+                                )
+                                if resp.usage_info
+                                else 0,
+                                "outputTokens": resp.usage_info.get("output_tokens", 0)
+                                if resp.usage_info
+                                else 0,
+                                "toolCalls": [
+                                    json.loads(t)
+                                    for t in resp.usage_info.get("tool_calls", [])
+                                ]
+                                if resp.usage_info
+                                else [],
+                                "graphqlAgentInnerToolCalls": [
+                                    json.loads(t)
+                                    for t in resp.graphql_agent_inner_tool_calls
+                                ]
+                                if resp.graphql_agent_inner_tool_calls
+                                else [],
                             }
-                            for uid, hotkey, elapse_time, truth_score, resp in zip(uids, hotkeys, miners_elapse_time, ground_truth_scores, responses)
+                            for uid, hotkey, elapse_time, truth_score, resp in zip(
+                                uids,
+                                hotkeys,
+                                miners_elapse_time,
+                                ground_truth_scores,
+                                responses,
+                            )
                             if resp.status_code != ErrorCode.NOT_HEALTHY.value
                         ],
                     )
 
                 if not project_score_matrix:
-                    logger.warning("[ChallengeManager] No valid project score matrix, skipping this round.")
+                    logger.warning(
+                        "[ChallengeManager] No valid project score matrix, skipping this round."
+                    )
                     challenge_interval = 30
                     continue
 
-                workload_score, workload_counts, log_quality_scores = await self.workload_manager.compute_workload_score(uids, hotkeys, challenge_id=challenge_id)
+                (
+                    workload_score,
+                    workload_counts,
+                    log_quality_scores,
+                ) = await self.workload_manager.compute_workload_score(
+                    uids, hotkeys, challenge_id=challenge_id
+                )
                 new_ema_scores = self.scorer_manager.update_scores(
                     uids,
                     hotkeys,
                     project_score_matrix,
                     workload_score,
-                    challenge_id=challenge_id
+                    challenge_id=challenge_id,
                 )
-                self.ipc_synthetic_score[0] = self.scorer_manager.get_last_synthetic_scores()
+                self.ipc_synthetic_score[0] = (
+                    self.scorer_manager.get_last_synthetic_scores()
+                )
                 self.ipc_synthetic_score[1] = miners_counter
 
                 table_formatter.create_synthetic_final_ranking_table(
@@ -432,7 +557,7 @@ class ChallengeManager:
                     quality_scores=log_quality_scores,
                     workload_score=workload_score,
                     new_ema_scores=new_ema_scores,
-                    max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 256))
+                    max_table_rows=int(os.getenv("MAX_TABLE_ROWS", 256)),
                 )
                 await self.benchmark.upload_ema(
                     uid=self.uid,
@@ -448,67 +573,95 @@ class ChallengeManager:
             logger.info("[ChallengeManager] Challenge loop interrupted by user")
             raise  # Re-raise to allow graceful shutdown
         except Exception as e:
-            logger.error(f"[ChallengeManager] Challenge loop error: {e}\n{traceback.format_exc()}")
+            logger.error(
+                f"[ChallengeManager] Challenge loop error: {e}\n{traceback.format_exc()}"
+            )
             raise
 
     async def generate_ground_truth(
-            self,
-            cid_hash: str,
-            question: str,
-            token_usage_metrics: TokenUsageMetrics | None = None,
-            round_id: int = 0,
-            block_height: int = 0,
-        ) -> Tuple[bool, str | None, int, dict | None, str]:
+        self,
+        cid_hash: str,
+        question: str,
+        token_usage_metrics: TokenUsageMetrics | None = None,
+        round_id: int = 0,
+        block_height: int = 0,
+    ) -> Tuple[bool, str | None, int, dict | None, str]:
         start_time = time.perf_counter()
         success = False
         result = None
-        metrics_data = None
+        metrics_data = {}
         model_name = ""
         try:
-            agent = self.agent_manager.get_graphql_agent(cid_hash)
-            if not agent:
-                raise ValueError(f"No server agent found for cid: {cid_hash}")
+            # agent = self.agent_manager.get_graphql_agent(cid_hash)
+            # if not agent:
+            #     raise ValueError(f"No server agent found for cid: {cid_hash}")
 
-            model_name = agent.llm.model_name
-            response, _, _ = await agent.query_no_stream(
-                question,
-                prompt_cache_key=f"{cid_hash}_{start_time}",
-                is_synthetic=True,
-                block_height=block_height
-            )
+            # model_name = agent.llm.model_name
+            # response, _, _ = await agent.query_no_stream(
+            #     question,
+            #     prompt_cache_key=f"{cid_hash}_{start_time}",
+            #     is_synthetic=True,
+            #     block_height=block_height,
+            # )
 
-            if os.getenv("LOG_GROUND_TRUTH", "").lower() == "true":
-                logger.info(f'------------------- Ground Truth Response for CID {cid_hash} ------------------ {response}')
+            # if os.getenv("LOG_GROUND_TRUTH", "").lower() == "true":
+            #     logger.info(
+            #         f"------------------- Ground Truth Response for CID {cid_hash} ------------------ {response}"
+            #     )
 
-            result = response.get('messages', [])[-1].content
+            # result = response.get("messages", [])[-1].content
 
-            if token_usage_metrics is not None:
-                metrics_data = token_usage_metrics.append(cid_hash, phase=Phase.GENERATE_GROUND_TRUTH, response=response, extra = {"round_id": round_id})
+            # if token_usage_metrics is not None:
+            #     metrics_data = token_usage_metrics.append(
+            #         cid_hash,
+            #         phase=Phase.GENERATE_GROUND_TRUTH,
+            #         response=response,
+            #         extra={"round_id": round_id},
+            #     )
 
-            if not result:
-                error = utils.try_get_invalid_tool_messages(response.get('messages', []))
-                raise RuntimeError(f"[ChallengeManager] - {cid_hash} Failed to generate ground truth. {error}")
+            # if not result:
+            #     error = utils.try_get_invalid_tool_messages(
+            #         response.get("messages", [])
+            #     )
+            #     raise RuntimeError(
+            #         f"[ChallengeManager] - {cid_hash} Failed to generate ground truth. {error}"
+            #     )
 
             # data = utils.form_training_data(question, block_height, response.get('messages', []), metrics_data)
             # now = time.strftime("%Y-%m-%d", time.localtime())
             # utils.append_to_jsonl(f"./.data/dataset_validate_{now}_.jsonl", data)
+            result="This is ground truth"
 
             success = True
 
         except KeyboardInterrupt:
-            logger.info(f"[ChallengeManager] generate_ground_truth interrupted by user for cid: {cid_hash}")
+            logger.info(
+                f"[ChallengeManager] generate_ground_truth interrupted by user for cid: {cid_hash}"
+            )
             raise  # Re-raise to allow graceful shutdown
         except Exception as e:
             # Handle specific rate limit errors differently
-            if isinstance(e, (dict, str)) and ('429' in str(e) or 'RATE_LIMIT_EXCEEDED' in str(e)):
-                logger.warning(f"[ChallengeManager] Rate limit exceeded for cid: {cid_hash}. Will retry later. Error: {e}")
+            if isinstance(e, (dict, str)) and (
+                "429" in str(e) or "RATE_LIMIT_EXCEEDED" in str(e)
+            ):
+                logger.warning(
+                    f"[ChallengeManager] Rate limit exceeded for cid: {cid_hash}. Will retry later. Error: {e}"
+                )
             else:
-                logger.error(f"[ChallengeManager] generate_ground_truth error for cid: {cid_hash} {e}\n{traceback.format_exc()}")
-            
+                logger.error(
+                    f"[ChallengeManager] generate_ground_truth error for cid: {cid_hash} {e}\n{traceback.format_exc()}"
+                )
+
             result = f"{e}"
 
         finally:
-            return [success, result, utils.fix_float(time.perf_counter() - start_time), metrics_data, model_name]
+            return [
+                success,
+                result,
+                utils.fix_float(time.perf_counter() - start_time),
+                metrics_data,
+                model_name,
+            ]
 
     async def query_miner(
         self,
@@ -519,11 +672,23 @@ class ChallengeManager:
         question: str,
         block_height: int = 0,
     ):
-        synapse = SyntheticNonStreamSynapse(id=challenge_id, uid=uid, cid_hash=cid_hash, question=question, block_height=block_height)
+        synapse = SyntheticNonStreamSynapse(
+            id=challenge_id,
+            uid=uid,
+            cid_hash=cid_hash,
+            question=question,
+            block_height=block_height,
+        )
         start_time = time.perf_counter()
 
         # Initialize response object with error defaults
-        r = SyntheticNonStreamSynapse(id=challenge_id, uid=uid, cid_hash=cid_hash, question=question, block_height=block_height)
+        r = SyntheticNonStreamSynapse(
+            id=challenge_id,
+            uid=uid,
+            cid_hash=cid_hash,
+            question=question,
+            block_height=block_height,
+        )
         r.status_code = ErrorCode.FORWARD_SYNTHETIC_FAILED.value
         r.error = "Unknown error"
 
@@ -539,15 +704,21 @@ class ChallengeManager:
                     deserialize=False,
                     timeout=self.forward_miner_timeout,
                 )
-                logger.debug(f"🔍 [ChallengeManager] - {challenge_id} MINER RESPONSE [UID: {uid}] - ✅ is_success: {r.is_success} - {r.dendrite.status_code} - {r.dendrite.status_message}")
+                logger.debug(
+                    f"🔍 [ChallengeManager] - {challenge_id} MINER RESPONSE [UID: {uid}] - ✅ is_success: {r.is_success} - {r.dendrite.status_code} - {r.dendrite.status_message}"
+                )
         except KeyboardInterrupt:
-            logger.info(f"[ChallengeManager] - {challenge_id} Miner query interrupted by user [UID: {uid}]")
+            logger.info(
+                f"[ChallengeManager] - {challenge_id} Miner query interrupted by user [UID: {uid}]"
+            )
             raise  # Re-raise to allow graceful shutdown
         except Exception as e:
-            logger.error(f"🔍 [ChallengeManager] - {challenge_id} MINER RESPONSE [UID: {uid}] - ❌ Failed to query: {e}\n{traceback.format_exc()}")
-            if not hasattr(r, 'status_code'):
+            logger.error(
+                f"🔍 [ChallengeManager] - {challenge_id} MINER RESPONSE [UID: {uid}] - ❌ Failed to query: {e}\n{traceback.format_exc()}"
+            )
+            if not hasattr(r, "status_code"):
                 r.status_code = ErrorCode.FORWARD_SYNTHETIC_FAILED.value
-            if not hasattr(r, 'error'):
+            if not hasattr(r, "error"):
                 r.error = str(e)
         finally:
             r.uid = uid
@@ -558,8 +729,13 @@ class ChallengeManager:
         while not self.event_stop.is_set():
             await asyncio.sleep(10)
             epoch_info = self._get_epoch_info()
-            should_force_epoch_submission = self._should_force_epoch_submission(epoch_info)
-            if not should_force_epoch_submission and time.time() - self._last_set_weight_time <= self.set_weight_interval:
+            should_force_epoch_submission = self._should_force_epoch_submission(
+                epoch_info
+            )
+            if (
+                not should_force_epoch_submission
+                and time.time() - self._last_set_weight_time <= self.set_weight_interval
+            ):
                 continue
 
             reason = "epoch-guard" if should_force_epoch_submission else "interval"
@@ -568,12 +744,16 @@ class ChallengeManager:
                 if not uids:
                     uids, scores = self._build_fallback_uniform_weights()
                     if not uids:
-                        logger.warning("[ChallengeManager] No miners available for fallback weight submission, skipping.")
+                        logger.warning(
+                            "[ChallengeManager] No miners available for fallback weight submission, skipping."
+                        )
                         self._last_set_weight_time = time.time()
                         continue
-                    logger.info("[ChallengeManager] No historical scores available. Submitting uniform fallback weights.")
+                    logger.info(
+                        "[ChallengeManager] No historical scores available. Submitting uniform fallback weights."
+                    )
 
-                self._set_weights(uids, scores)
+                # self._set_weights(uids, scores)
                 self._last_set_weight_time = time.time()
                 if epoch_info:
                     self._last_epoch_submitted = epoch_info.epoch_index
@@ -589,7 +769,7 @@ class ChallengeManager:
                     bt.SelectiveMetagraphIndex.Block,
                     bt.SelectiveMetagraphIndex.Tempo,
                     bt.SelectiveMetagraphIndex.BlocksSinceLastStep,
-                ]
+                ],
             )
         except Exception as e:
             logger.warning(f"[ChallengeManager] Unable to get epoch info: {e}")
@@ -630,9 +810,16 @@ class ChallengeManager:
             return False
 
         if self._last_epoch_submitted is None:
-            return epoch_info.blocks_until_next_epoch <= self.epoch_submission_buffer_blocks
+            return (
+                epoch_info.blocks_until_next_epoch
+                <= self.epoch_submission_buffer_blocks
+            )
 
-        if epoch_info.epoch_index > self._last_epoch_submitted and epoch_info.blocks_until_next_epoch <= self.epoch_submission_buffer_blocks:
+        if (
+            epoch_info.epoch_index > self._last_epoch_submitted
+            and epoch_info.blocks_until_next_epoch
+            <= self.epoch_submission_buffer_blocks
+        ):
             return True
 
         return False
@@ -647,7 +834,9 @@ class ChallengeManager:
         return uids, scores
 
     def _build_fallback_uniform_weights(self) -> tuple[list[int], list[float]]:
-        miner_uids = [uid for uid in list(self.ipc_miners_dict.keys()) if uid != self.uid]
+        miner_uids = [
+            uid for uid in list(self.ipc_miners_dict.keys()) if uid != self.uid
+        ]
         if not miner_uids:
             return [], []
 
@@ -656,7 +845,9 @@ class ChallengeManager:
         return miner_uids, [0] * count
 
     def _set_weights(self, uids: list[int], scores: list[float]):
-        logger.info(f"[ChallengeManager] set_weights for uids: {uids}, scores: {scores}")
+        logger.info(
+            f"[ChallengeManager] set_weights for uids: {uids}, scores: {scores}"
+        )
         scores_np = np.array(scores, dtype=np.float32)
 
         if np.all(scores_np == 0):
@@ -679,14 +870,14 @@ class ChallengeManager:
                 processed_weight_uids,
                 processed_weights,
             ) = bt.utils.weight_utils.process_weights_for_netuid(
-                    uids = np.array(uids, dtype=np.int64),
-                    # weights = raw_weights.detach().cpu().numpy().astype(np.float32),
-                    weights = scores_np,
-                    netuid=self.settings.netuid,
-                    subtensor=self.settings.subtensor,
-                    metagraph=self.settings.metagraph,
+                uids=np.array(uids, dtype=np.int64),
+                # weights = raw_weights.detach().cpu().numpy().astype(np.float32),
+                weights=scores_np,
+                netuid=self.settings.netuid,
+                subtensor=self.settings.subtensor,
+                metagraph=self.settings.metagraph,
             )
-        
+
         logger.info(f"processed_weight_uids: {processed_weight_uids}")
         logger.info(f"processed_weights: {processed_weights}")
 

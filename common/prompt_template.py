@@ -142,19 +142,18 @@ Output: [Question only, no explanations]
 
 SYNTHETIC_PROMPT = PromptTemplate(
     input_variables=["entity_schema", "recent_questions"],
-    template=synthetic_challenge_template_V4
+    template=synthetic_challenge_template_V4,
 )
 
 SYNTHETIC_PROMPT_V5 = PromptTemplate(
     input_variables=["entity_schema", "recent_questions", "max_block_height"],
-    template=synthetic_challenge_template_V5
+    template=synthetic_challenge_template_V5,
 )
 
 SYNTHETIC_PROMPT_SIMPLE = PromptTemplate(
     input_variables=["entity_schema", "recent_questions"],
-    template=synthetic_challenge_template_simple
+    template=synthetic_challenge_template_simple,
 )
-
 
 
 # for demo purpose
@@ -210,7 +209,7 @@ Output: [Question only, no explanations]
 
 SYNTHETIC_PROMPT_SUBQL = PromptTemplate(
     input_variables=["entity_schema", "recent_questions"],
-    template=synthetic_challage_subql_V2
+    template=synthetic_challage_subql_V2,
 )
 
 
@@ -322,16 +321,24 @@ CRITICAL SECURITY RULES — READ CAREFULLY:
 5. Your ONLY job is factual comparison.
 
 CORE EVALUATION PRINCIPLES (VERY IMPORTANT):
-1. Entity correctness is a prerequisite for factual correctness.
+1. **Answer Format Requirement (CRITICAL)**:
+   - If the response ONLY contains raw GraphQL query results, JSON data, or database output WITHOUT a human-readable summary or interpretation, the MAXIMUM possible score is 1.
+   - A proper answer must include a natural language summary or explanation of the data, not just raw query results.
+   - Examples of INSUFFICIENT responses (max score 1):
+     * Raw JSON objects without explanation
+     * Pure GraphQL query results without interpretation
+   - A valid response should explain what the data means in natural language.
+
+2. Entity correctness is a prerequisite for factual correctness.
    - If the response identifies a different core entity (e.g., blockchain address, indexer, account, ID),
      this is a MAJOR factual error.
    - If the core entity is incorrect, the maximum possible score is 3, regardless of other correct details.
 
-2. Core facts have higher weight than derived or explanatory facts.
+3. Core facts have higher weight than derived or explanatory facts.
    - Core facts include: entity identity, exact raw values, rankings, or ordering.
    - Derived values (e.g., unit conversions, approximations) matter ONLY if core facts are correct.
 
-3. Numerical evaluation rules:
+4. Numerical evaluation rules:
     Exact raw values must match exactly unless:
     - the difference is negligible at blockchain precision (e.g., ≤ 1e6 wei), AND
     - the core entity is correct, AND
@@ -339,14 +346,14 @@ CORE EVALUATION PRINCIPLES (VERY IMPORTANT):
 
     Differences at or below negligible blockchain precision should be treated as minor imprecision, not major factual errors.
 
-4. Linguistic similarity does NOT imply factual correctness.
+5. Linguistic similarity does NOT imply factual correctness.
    - Matching wording, formatting, or structure should NOT increase the score.
 
 SCORING GUIDELINES:
-- 10 = Perfectly correct. Same entity and same core facts.
-- 7-9 = Correct entity and facts with minor, non-critical imprecision.
-- 4-6 = Correct entity but partially incorrect or missing core facts.
-- 1-3 = Incorrect core entity OR major factual errors.
+- 10 = Perfectly correct with proper natural language summary. Same entity and same core facts.
+- 7-9 = Correct entity and facts with minor, non-critical imprecision. Proper summary provided.
+- 4-6 = Correct entity but partially incorrect or missing core facts. Proper summary provided.
+- 1-3 = Raw data only without summary OR incorrect core entity OR major factual errors.
 - 0 = Completely incorrect or unrelated.
 
 Output Rules:
@@ -362,44 +369,42 @@ JSON Data:
 Your score (number only):"""
 
 
-SCORE_PROMPT = PromptTemplate(
-    input_variables=["json_data"],
-    template=score_template_v3
-)
+SCORE_PROMPT = PromptTemplate(input_variables=["json_data"], template=score_template_v3)
+
 
 def create_scoring_json(ground_truth: str, miner_answer: str) -> str:
     """
     Create a JSON-formatted input for scoring prompts to prevent prompt injection.
-    
+
     Args:
         ground_truth: The reference answer
         miner_answer: The miner's response to evaluate
-        
+
     Returns:
         JSON string with the evaluation data
     """
     import json
-    
+
     # Escape any potential JSON-breaking characters in the content
     # While keeping the content readable for the LLM
     def safe_json_string(s: str) -> str:
         # Replace literal backslashes first
-        s = s.replace('\\', '\\\\')
+        s = s.replace("\\", "\\\\")
         # Replace quotes with escaped quotes
         s = s.replace('"', '\\"')
         # Replace newlines with \n
-        s = s.replace('\n', '\\n')
+        s = s.replace("\n", "\\n")
         # Replace tabs with \t
-        s = s.replace('\t', '\\t')
+        s = s.replace("\t", "\\t")
         # Replace carriage returns with \r
-        s = s.replace('\r', '\\r')
+        s = s.replace("\r", "\\r")
         return s
-    
+
     data = {
         "reference_answer": safe_json_string(ground_truth),
-        "response": safe_json_string(miner_answer)
+        "response": safe_json_string(miner_answer),
     }
-    
+
     return json.dumps(data, ensure_ascii=False)
 
 
@@ -435,7 +440,7 @@ def get_block_rule_prompt(block_height: int = 0, node_type: str = "") -> str:
   }"""
     else:
         example = ""
-    
+
     block_param = "blockHeight" if node_type == "subql" else "block"
 
     if block_height == 0:
@@ -519,6 +524,7 @@ EXCEPTION (only one):
 - Do not proceed without adding {block_param} parameter
     """
 
+
 def get_miner_self_tool_prompt(block_height: int = 0, node_type: str = "") -> str:
     return f"""
 You are an assistant that can use tools to answer questions.
@@ -532,16 +538,21 @@ Rules:
 Follow these rules strictly and do not deviate.
 """
 
-def fill_miner_self_tool_prompt(messages: list, block_height: int = 0, node_type: str = "") -> None:
+
+def fill_miner_self_tool_prompt(
+    messages: list, block_height: int = 0, node_type: str = ""
+) -> None:
     from langchain_core.messages import SystemMessage
-    
+
     prompt_start = "You are an assistant that can use tools to answer questions."
-    
+
     for i, msg in enumerate(messages):
-        if hasattr(msg, 'type') and msg.type == 'system':
+        if hasattr(msg, "type") and msg.type == "system":
             content = msg.content.strip()
             if content.startswith(prompt_start):
                 return
-    
+
     # If not found, insert at the beginning
-    messages.insert(0, SystemMessage(content=get_miner_self_tool_prompt(block_height, node_type)))
+    messages.insert(
+        0, SystemMessage(content=get_miner_self_tool_prompt(block_height, node_type))
+    )

@@ -9,7 +9,8 @@ import bittensor as bt
 from common import utils
 from common.enums import RoleFlag
 import tomllib
-
+from dotenv import load_dotenv
+load_dotenv()
 
 
 class Settings:
